@@ -464,7 +464,10 @@ mod tests {
 
         let legacy = config.presets.get("legacy").unwrap().clone().into_preset();
         assert_eq!(legacy.auth_method, "basic");
-        assert_eq!(legacy.urls.get("auth").unwrap(), "https://auth.old.example.com");
+        assert_eq!(
+            legacy.urls.get("auth").unwrap(),
+            "https://auth.old.example.com"
+        );
     }
 
     #[test]

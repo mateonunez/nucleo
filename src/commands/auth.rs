@@ -165,8 +165,7 @@ async fn login_oauth2(no_browser: bool) -> Result<(), CliError> {
     let redirect_uri = format!("http://127.0.0.1:{port}{}", oauth2_config.redirect_path);
 
     // 3. Build authorization URL
-    let authorize_url =
-        oauth2::build_authorize_url(&oauth2_config, &pkce, &state, &redirect_uri);
+    let authorize_url = oauth2::build_authorize_url(&oauth2_config, &pkce, &state, &redirect_uri);
 
     // 4. Open browser or print URL
     if no_browser || !oauth2::open_browser(&authorize_url) {
@@ -176,7 +175,10 @@ async fn login_oauth2(no_browser: bool) -> Result<(), CliError> {
         println!("Opening browser for authorization...");
     }
 
-    println!("Waiting for callback on http://127.0.0.1:{port}{}...", oauth2_config.redirect_path);
+    println!(
+        "Waiting for callback on http://127.0.0.1:{port}{}...",
+        oauth2_config.redirect_path
+    );
 
     // 5. Await callback
     let (code, returned_state) = tokio::time::timeout(
@@ -200,14 +202,19 @@ async fn login_oauth2(no_browser: bool) -> Result<(), CliError> {
 
     // 7. Exchange code for tokens
     let http = build_client()?;
-    let token_resp =
-        oauth2::exchange_code(&http, &oauth2_config, &code, &pkce.code_verifier, &redirect_uri)
-            .await?;
+    let token_resp = oauth2::exchange_code(
+        &http,
+        &oauth2_config,
+        &code,
+        &pkce.code_verifier,
+        &redirect_uri,
+    )
+    .await?;
 
     // 8. Build and save credentials
-    let expires = token_resp.expires_in.map_or(i64::MAX, |secs| {
-        chrono::Utc::now().timestamp() + secs
-    });
+    let expires = token_resp
+        .expires_in
+        .map_or(i64::MAX, |secs| chrono::Utc::now().timestamp() + secs);
     let scopes = token_resp
         .scope
         .map(|s| s.split_whitespace().map(String::from).collect())

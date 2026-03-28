@@ -148,9 +148,9 @@ async fn refresh_token_oauth2(
     let token_resp =
         crate::oauth2::refresh_oauth2(http, &oauth2_config, &creds.refresh_token).await?;
 
-    let expires = token_resp.expires_in.map_or(i64::MAX, |secs| {
-        chrono::Utc::now().timestamp() + secs
-    });
+    let expires = token_resp
+        .expires_in
+        .map_or(i64::MAX, |secs| chrono::Utc::now().timestamp() + secs);
     let scopes = token_resp
         .scope
         .map(|s| s.split_whitespace().map(String::from).collect())
