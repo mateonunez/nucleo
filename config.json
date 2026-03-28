@@ -1,0 +1,18 @@
+{
+  "urls": {},
+  "active_env": "",
+  "presets": {
+    "dev": {
+      "auth": "https://auth.dev.example.com/api/v2",
+      "api": "https://api.dev.example.com/api/v1"
+    },
+    "prod": {
+      "auth": "https://auth.example.com/api/v2",
+      "api": "https://api.example.com/api/v1"
+    }
+  },
+  "plugins": {
+    "directory": null,
+    "registries": []
+  }
+}

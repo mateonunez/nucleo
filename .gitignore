@@ -1,0 +1,16 @@
+/target
+.env
+.stuff
+
+# Credential files — never commit real credentials.
+credentials.json
+context.json
+
+plugins/**/node_modules
+plugins/**/dist
+
+plugins/**/reports
+plugins/**/fixtures
+
+benchmarks/results/*.md
+benchmarks/results/*.json
