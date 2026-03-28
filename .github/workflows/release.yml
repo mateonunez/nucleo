@@ -1,48 +1,38 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write
-
-env:
-  CARGO_TERM_COLOR: always
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
-  bump:
-    name: Extract version
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.meta.outputs.tag }}
-      version: ${{ steps.meta.outputs.version }}
-    steps:
-      - name: Extract tag and version
-        id: meta
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          VERSION="${TAG#v}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
+  # ------------------------------------------------------------------
+  # 1. Build binaries for all platforms FIRST — if any fail, nothing is committed
+  # ------------------------------------------------------------------
   build:
-    name: Build ${{ matrix.target }}
-    needs: bump
-    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
           - target: x86_64-apple-darwin
-            os: macos-latest
+            runner: macos-14
           - target: aarch64-apple-darwin
-            os: macos-latest
+            runner: macos-latest
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -51,56 +41,123 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
         with:
-          key: ${{ matrix.target }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-cargo-
 
-      - name: Install cross-compilation tools
+      - name: Install cross (Linux aarch64 only)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+        run: cargo install cross --locked
 
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Package
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../nucleo-${{ matrix.target }}.tar.gz nucleo
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross build --release --locked --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Package archive
+        run: |
+          ARCHIVE="nucleo-${{ matrix.target }}.tar.gz"
+          tar czf "${ARCHIVE}" -C "target/${{ matrix.target }}/release" nucleo
+          ls -lh "${ARCHIVE}"
+
+      - uses: actions/upload-artifact@v4
         with:
           name: nucleo-${{ matrix.target }}
           path: nucleo-${{ matrix.target }}.tar.gz
+          retention-days: 1
 
-  release:
-    name: Create Release
-    needs: [bump, build]
+  # ------------------------------------------------------------------
+  # 2. All builds passed — now bump version, commit, and push tag
+  # ------------------------------------------------------------------
+  bump:
+    name: Bump version
+    needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag:     ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.NUCLEO_RELEASE_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Compute and apply version bump
+        id: version
+        run: |
+          CURRENT=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "//;s/".*//')
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+
+          case "${{ inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW="${MAJOR}.${MINOR}.${PATCH}"
+          sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"${NEW}\"/}" Cargo.toml
+          cargo update --workspace 2>&1 | tail -3
+
+          echo "version=${NEW}"   >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEW}"      >> "$GITHUB_OUTPUT"
+          echo "Bumped ${CURRENT} → ${NEW}"
+
+      - name: Commit and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: release ${TAG}"
+          git tag "${TAG}"
+          git push origin HEAD:main
+          git push origin "${TAG}"
+
+  # ------------------------------------------------------------------
+  # 3. Publish the GitHub Release with all four binaries
+  # ------------------------------------------------------------------
+  release:
+    name: Publish release
+    needs: [build, bump]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.bump.outputs.tag }}
 
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: artifacts/
+          pattern: nucleo-*
           merge-multiple: true
 
       - name: Generate changelog
         id: changelog
         run: |
-          # Get auto-generated changelog from previous tag
           PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1 || echo "")
           if [ -n "$PREV_TAG" ]; then
             CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
           else
             CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20)
           fi
-          # Write to file to preserve newlines
           echo "$CHANGELOG" > /tmp/changelog.txt
 
       - name: Create GitHub Release
