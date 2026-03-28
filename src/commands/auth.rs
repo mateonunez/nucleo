@@ -165,7 +165,12 @@ async fn login_oauth2(no_browser: bool) -> Result<(), CliError> {
                 .to_string(),
         ));
     }
-    if oauth2_config.client_secret.as_deref().map(str::is_empty).unwrap_or(false) {
+    if oauth2_config
+        .client_secret
+        .as_deref()
+        .map(str::is_empty)
+        .unwrap_or(false)
+    {
         return Err(CliError::Validation(
             "OAuth2 client_secret is set but empty. Either remove the field entirely \
              (for PKCE public clients) or add the real secret from your provider dashboard."
