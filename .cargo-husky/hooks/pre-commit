@@ -1,0 +1,6 @@
+#\!/bin/sh
+
+set -e
+
+echo "--- pre-push: fmt ---"
+cargo fmt --all -- --check

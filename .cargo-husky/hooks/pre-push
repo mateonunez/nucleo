@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+
+echo "--- pre-push: clippy ---"
+cargo clippy --locked -- -D warnings
+
+echo "--- pre-push: test ---"
+cargo test --locked
