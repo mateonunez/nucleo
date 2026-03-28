@@ -341,20 +341,27 @@ pub fn env_preset(name: &str) -> Option<ServiceUrls> {
 /// Load the active environment preset as a structured `EnvironmentPreset`.
 pub fn load_active_preset() -> Result<EnvironmentPreset, CliError> {
     let config = load_config()?;
-    if config.active_env.is_empty() {
+
+    // Determine the active environment: explicit setting, or fall back to first preset
+    let active = if !config.active_env.is_empty() {
+        config.active_env.clone()
+    } else if let Some(first_key) = config.presets.keys().next() {
+        first_key.clone()
+    } else {
         return Err(CliError::Validation(format!(
-            "No active environment set. Run `{} config env use <preset>`.",
+            "No active environment set and no presets available. Run `{} config env use <preset>`.",
             crate::consts::APP_BIN
         )));
-    }
+    };
+
     config
         .presets
-        .get(&config.active_env)
+        .get(&active)
         .map(|p| p.clone().into_preset())
         .ok_or_else(|| {
             CliError::Validation(format!(
                 "Preset '{}' not found in config.",
-                config.active_env
+                active
             ))
         })
 }
@@ -370,8 +377,19 @@ pub fn load_oauth2_config() -> Result<OAuth2Config, CliError> {
 }
 
 /// Load service URLs with env var overrides.
+///
+/// Priority (highest wins): env vars > top-level `urls` > active preset `urls`.
 pub fn load_service_urls() -> Result<ServiceUrls, CliError> {
-    let mut urls = load_config()?.urls;
+    // Start with URLs from the active preset (if any)
+    let mut urls = match load_active_preset() {
+        Ok(preset) => preset.urls,
+        Err(_) => ServiceUrls::new(),
+    };
+
+    // Top-level `urls` override preset URLs
+    for (k, v) in load_config()?.urls {
+        urls.insert(k, v);
+    }
 
     // Env var overrides: <PREFIX>_<KEY>_URL
     let keys: Vec<String> = urls.keys().cloned().collect();
