@@ -35,9 +35,53 @@ Built-in profiles for these APIs. Use the API name as your target input (e.g. "S
 
 ---
 
+## Phase 0: Bootstrap
+
+Before anything else, clone the nucleo core so the user has a fresh foundation to build on.
+
+### 0.1 — Determine destination
+
+Ask exactly **1 question**:
+
+```
+Where should the new CLI be created?
+  Path (default: ./{cli-name}): _
+```
+
+If the user presses Enter, use `./{cli-name}` — resolved after Phase 1 collects the name.
+
+### 0.2 — Clone nucleo core
+
+```bash
+git clone https://github.com/mateonunez/nucleo.git {destination}
+```
+
+After cloning, remove the `.git` directory so the new project starts with a clean history:
+
+```bash
+cd {destination} && rm -rf .git && git init && git add -A && git commit -m "chore: init from nucleo"
+```
+
+Also remove the existing `config.json` at the repo root (it will be regenerated in Phase 5):
+
+```bash
+rm -f config.json
+```
+
+Print confirmation:
+```
+✓ nucleo cloned into {destination}
+✓ Git history reset — fresh repo initialized
+Working directory: {destination}
+```
+
+All subsequent file edits happen inside `{destination}`.
+
+---
+
 ## Phase 1: Identity
 
-Ask exactly **3 questions** — nothing more:
+Ask exactly **3 questions** — nothing more (destination was already asked in Phase 0):
 
 ```
 1. CLI name         e.g. "spotify-cli"
@@ -48,6 +92,8 @@ Ask exactly **3 questions** — nothing more:
                     - Local spec path:  ./openapi.yaml
                     - Raw base URL:     https://api.example.com/v1
 ```
+
+Once the CLI name is known, resolve the destination from Phase 0 (e.g. default `./{cli-name}`) and proceed with the clone if not yet done.
 
 **Auto-derive from CLI name** (no prompts):
 - `APP_NAME` → cli name as-is (e.g. `spotify-cli`)
