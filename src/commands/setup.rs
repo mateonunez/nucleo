@@ -217,7 +217,7 @@ fn write_claude_desktop_config() -> Result<(), CliError> {
     };
 
     // Ensure mcpServers object exists
-    if !config.get("mcpServers").is_some() {
+    if config.get("mcpServers").is_none() {
         config["mcpServers"] = serde_json::json!({});
     }
 

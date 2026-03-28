@@ -46,6 +46,7 @@ impl Credentials {
         self.expires_soon(0)
     }
 
+    #[allow(dead_code)]
     pub fn is_admin(&self) -> bool {
         self.permissions.iter().any(|p| p == "*" || p == "admin")
     }

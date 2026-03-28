@@ -127,9 +127,8 @@ fn discover_plugins() -> Result<Vec<(PluginManifest, PathBuf)>, CliError> {
         if !manifest_path.exists() {
             continue;
         }
-        match load_manifest(&manifest_path) {
-            Ok(manifest) => plugins.push((manifest, path)),
-            Err(_) => {}
+        if let Ok(manifest) = load_manifest(&manifest_path) {
+            plugins.push((manifest, path));
         }
     }
 
