@@ -1,0 +1,20 @@
+{
+  "name": "scaffold",
+  "version": "0.1.0",
+  "description": "Scaffold new projects, layouts, and UI components from templates",
+  "author": "nucleo",
+  "license": "MIT",
+  "engine": {
+    "command": "node",
+    "args": ["src/index.js"]
+  },
+  "commands": {
+    "list": {
+      "description": "List available templates"
+    },
+    "create": {
+      "description": "Create a new project from a template"
+    }
+  },
+  "cli_version": ">=0.1.0"
+}

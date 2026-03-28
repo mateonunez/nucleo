@@ -1,0 +1,20 @@
+{
+  "name": "hello",
+  "version": "0.1.0",
+  "description": "Example plugin — demonstrates the nucleo plugin protocol",
+  "author": "nucleo",
+  "license": "ISC",
+  "engine": {
+    "command": "node",
+    "args": ["dist/index.js"]
+  },
+  "commands": {
+    "greet": {
+      "description": "Print a greeting message"
+    },
+    "status": {
+      "description": "Show plugin environment info"
+    }
+  },
+  "cli_version": ">=0.1.0"
+}
