@@ -51,6 +51,10 @@ templates/
 benchmarks/
 ├── run.sh               Benchmark runner (token consumption + execution speed)
 └── results/.gitignore   Results directory (gitignored)
+docs/
+├── README.md            Documentation index
+└── guides/
+    └── create-a-new-cli.md  Step-by-step guide: fork nucleo, build a CLI for any API
 config.json              Default configuration (copy to ~/.config/nucleo/config.json)
 .env.example             Environment variable template
 .claude/
