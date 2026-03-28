@@ -52,8 +52,8 @@ benchmarks/
 config.json              Default configuration (copy to ~/.config/nucleo/config.json)
 .env.example             Environment variable template
 .claude/
-├── agents/              Agent definitions (command-builder, plugin-builder)
-└── skills/              Skills (/add-command, /add-plugin, /add-mcp-tool, /benchmark)
+├── agents/              Agent definitions (nucleo-expert)
+└── skills/              Skills (/add-command, /add-plugin, /add-mcp-tool, /benchmark, /update-docs)
 .github/workflows/
 ├── ci.yml               CI: check, test, clippy, fmt
 └── release.yml          Release: cross-platform builds + GitHub Release
