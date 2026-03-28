@@ -14,14 +14,16 @@ nucleo is a reusable Rust CLI framework. Fork it, change 4 constants in `src/con
 | `src/consts.rs` | `APP_NAME`, `APP_DIR`, `APP_PREFIX`, `APP_BIN` — the 4 fork constants |
 | `src/error.rs` | `CliError` enum: Api(1), Auth(2), Validation(3), Other(5) + `print_error_json()` |
 | `src/formatter.rs` | `OutputFormat`: Json, Table, Yaml, Csv, Ids, Slack — `format_value()` + `from_str()` |
-| `src/client.rs` | reqwest client, 429 retry (3x), token auto-refresh (120s), 401 retry |
-| `src/config.rs` | JSON config, `HashMap<String,String>` ServiceUrls, env var overrides, presets |
+| `src/client.rs` | reqwest client, 429 retry (3x), token auto-refresh (basic + OAuth2), 401 retry |
+| `src/config.rs` | JSON config, PresetConfig (legacy flat / structured), env var overrides, presets |
+| `src/oauth2.rs` | OAuth2 Authorization Code + PKCE: generate, callback server, token exchange |
 
 ### Types (`src/types/`)
 
 | Type | Fields |
 |------|--------|
-| `Credentials` | access_token, refresh_token, expires (unix ts), permissions |
+| `Credentials` | access_token, refresh_token, expires (unix ts), permissions, auth_method, scopes |
+| `OAuth2Config` | client_id, authorize_url, token_url, scopes, client_secret (opt), redirect_path |
 | `JwtPayload` | sub, exp, email, name, username, permissions |
 | `ProjectContext` | project_id, env_id, api_key, stage |
 | `PaginatedResponse<T>` | data, total, page_token |
@@ -31,7 +33,7 @@ nucleo is a reusable Rust CLI framework. Fork it, change 4 constants in `src/con
 
 | Command | File | Pattern |
 |---------|------|---------|
-| auth | `auth.rs` | login/logout/token — credential management |
+| auth | `auth.rs` | login (basic + OAuth2 PKCE)/logout/token — credential management |
 | config | `config_cmd.rs` | show/env/set — config manipulation |
 | status | `status.rs` | system overview with `--format` |
 | ping | `ping.rs` | GET example — `send_with_retry()` |
@@ -62,8 +64,10 @@ Language-agnostic, subprocess-based. Plugins live in directories with `plugin.js
 - **Directory:** `~/.config/nucleo/`
 - **Files:** `credentials.json`, `context.json`, `config.json`, `plugins/`
 - **Priority:** env vars > config.json > defaults
+- **PresetConfig:** `#[serde(untagged)]` enum — legacy flat `HashMap<String,String>` or structured `EnvironmentPreset` with `auth_method` + `oauth2`
 - **ServiceUrls:** `HashMap<String, String>` — no hardcoded service names
 - **Env overrides:** `{APP_PREFIX}_{KEY}_URL` for URLs, `{APP_PREFIX}_TOKEN` for auth
+- **OAuth2 helpers:** `load_active_preset()`, `load_oauth2_config()`
 
 ## Conventions
 
@@ -179,10 +183,14 @@ async fn tool_my_tool(&self, Parameters(params): Parameters<MyParams>) -> String
 
 ### New Environment Preset
 
-Add to `config.json` under `presets`:
-
+Add to `config.json` under `presets`. Basic auth (legacy flat):
 ```json
 { "staging": { "auth": "https://auth.staging.example.com/api/v2" } }
+```
+
+OAuth2 (structured):
+```json
+{ "staging": { "urls": { "api": "https://..." }, "auth_method": "oauth2", "oauth2": { "client_id": "...", "authorize_url": "...", "token_url": "...", "scopes": ["..."] } } }
 ```
 
 Switch: `nucleo config env use staging`

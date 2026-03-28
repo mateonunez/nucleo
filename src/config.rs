@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::consts::{APP_DIR, APP_PREFIX};
 use crate::error::CliError;
 use crate::types::auth::Credentials;
+use crate::types::oauth2::OAuth2Config;
 use crate::types::project::ProjectContext;
 
 /// Service URLs are a dynamic map: any service name → URL.
@@ -71,6 +72,8 @@ pub fn load_credentials() -> Result<Credentials, CliError> {
                 refresh_token: String::new(),
                 expires: i64::MAX,
                 permissions: vec![],
+                auth_method: "basic".to_string(),
+                scopes: vec![],
             });
         }
     }
@@ -191,6 +194,59 @@ pub struct PluginRegistry {
     pub token: Option<String>,
 }
 
+/// An environment preset: either the legacy flat URL map or the new structured format.
+///
+/// The `#[serde(untagged)]` attribute allows both formats in config.json:
+/// - Legacy: `{ "auth": "https://...", "api": "https://..." }`
+/// - Full:   `{ "urls": { ... }, "auth_method": "oauth2", "oauth2": { ... } }`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PresetConfig {
+    /// New structured format with auth_method and optional OAuth2 config.
+    Full(EnvironmentPreset),
+    /// Legacy: flat URL map (treated as urls-only with basic auth).
+    Legacy(ServiceUrls),
+}
+
+impl PresetConfig {
+    /// Normalize to `EnvironmentPreset` regardless of format.
+    pub fn into_preset(self) -> EnvironmentPreset {
+        match self {
+            PresetConfig::Full(preset) => preset,
+            PresetConfig::Legacy(urls) => EnvironmentPreset {
+                urls,
+                auth_method: "basic".to_string(),
+                oauth2: None,
+            },
+        }
+    }
+
+    /// Get service URLs regardless of format.
+    pub fn urls(&self) -> &ServiceUrls {
+        match self {
+            PresetConfig::Full(preset) => &preset.urls,
+            PresetConfig::Legacy(urls) => urls,
+        }
+    }
+}
+
+/// Structured environment preset with auth configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvironmentPreset {
+    /// Service URLs (dynamic map: service name → URL).
+    pub urls: ServiceUrls,
+    /// Auth method: "basic" (username/password) or "oauth2".
+    #[serde(default = "default_basic")]
+    pub auth_method: String,
+    /// OAuth2 configuration (required when auth_method is "oauth2").
+    #[serde(default)]
+    pub oauth2: Option<OAuth2Config>,
+}
+
+fn default_basic() -> String {
+    "basic".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// Service URLs (dynamic map: service name → URL).
@@ -199,9 +255,9 @@ pub struct AppConfig {
     /// Name of the active environment preset.
     #[serde(default = "default_active_env")]
     pub active_env: String,
-    /// User-defined environment presets: preset name → service URLs map.
+    /// User-defined environment presets.
     #[serde(default)]
-    pub presets: HashMap<String, ServiceUrls>,
+    pub presets: HashMap<String, PresetConfig>,
     /// Plugin system settings.
     #[serde(default)]
     pub plugins: PluginsConfig,
@@ -222,7 +278,7 @@ impl Default for AppConfig {
 // Environment presets
 // ---------------------------------------------------------------------------
 
-/// Available preset names (read from config.toml).
+/// Available preset names (read from config.json).
 pub fn env_preset_names() -> Vec<String> {
     match load_config() {
         Ok(cfg) => {
@@ -236,7 +292,42 @@ pub fn env_preset_names() -> Vec<String> {
 
 /// Return service URLs for a named preset, or `None` if not found.
 pub fn env_preset(name: &str) -> Option<ServiceUrls> {
-    load_config().ok()?.presets.get(name).cloned()
+    load_config()
+        .ok()?
+        .presets
+        .get(name)
+        .map(|p| p.urls().clone())
+}
+
+/// Load the active environment preset as a structured `EnvironmentPreset`.
+pub fn load_active_preset() -> Result<EnvironmentPreset, CliError> {
+    let config = load_config()?;
+    if config.active_env.is_empty() {
+        return Err(CliError::Validation(format!(
+            "No active environment set. Run `{} config env use <preset>`.",
+            crate::consts::APP_BIN
+        )));
+    }
+    config
+        .presets
+        .get(&config.active_env)
+        .map(|p| p.clone().into_preset())
+        .ok_or_else(|| {
+            CliError::Validation(format!(
+                "Preset '{}' not found in config.",
+                config.active_env
+            ))
+        })
+}
+
+/// Load OAuth2 configuration from the active preset.
+pub fn load_oauth2_config() -> Result<OAuth2Config, CliError> {
+    let preset = load_active_preset()?;
+    preset.oauth2.ok_or_else(|| {
+        CliError::Validation(
+            "No OAuth2 configuration in active preset. Add an 'oauth2' block to your preset in config.json.".to_string()
+        )
+    })
 }
 
 /// Load service URLs with env var overrides.
@@ -292,6 +383,97 @@ pub fn save_config(config: &AppConfig) -> Result<(), CliError> {
     std::fs::write(&path, content)
         .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to save config.json: {e}")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_preset_deserializes() {
+        let json = r#"{
+            "urls": {},
+            "active_env": "dev",
+            "presets": {
+                "dev": {
+                    "auth": "https://auth.example.com",
+                    "api": "https://api.example.com"
+                }
+            }
+        }"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        let preset = config.presets.get("dev").unwrap();
+        let urls = preset.urls();
+        assert_eq!(urls.get("auth").unwrap(), "https://auth.example.com");
+        assert_eq!(urls.get("api").unwrap(), "https://api.example.com");
+    }
+
+    #[test]
+    fn full_preset_deserializes() {
+        let json = r#"{
+            "urls": {},
+            "active_env": "dev",
+            "presets": {
+                "dev": {
+                    "urls": { "api": "https://api.spotify.com/v1" },
+                    "auth_method": "oauth2",
+                    "oauth2": {
+                        "client_id": "abc",
+                        "authorize_url": "https://accounts.spotify.com/authorize",
+                        "token_url": "https://accounts.spotify.com/api/token",
+                        "scopes": ["user-read-playback-state"]
+                    }
+                }
+            }
+        }"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        let preset = config.presets.get("dev").unwrap().clone().into_preset();
+        assert_eq!(preset.auth_method, "oauth2");
+        assert!(preset.oauth2.is_some());
+        let oauth2 = preset.oauth2.unwrap();
+        assert_eq!(oauth2.client_id, "abc");
+        assert_eq!(oauth2.scopes, vec!["user-read-playback-state"]);
+    }
+
+    #[test]
+    fn mixed_presets_deserialize() {
+        let json = r#"{
+            "urls": {},
+            "active_env": "dev",
+            "presets": {
+                "dev": {
+                    "urls": { "api": "https://api.dev.example.com" },
+                    "auth_method": "oauth2",
+                    "oauth2": {
+                        "client_id": "abc",
+                        "authorize_url": "https://auth.example.com/authorize",
+                        "token_url": "https://auth.example.com/token"
+                    }
+                },
+                "legacy": {
+                    "auth": "https://auth.old.example.com",
+                    "api": "https://api.old.example.com"
+                }
+            }
+        }"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.presets.len(), 2);
+
+        let dev = config.presets.get("dev").unwrap().clone().into_preset();
+        assert_eq!(dev.auth_method, "oauth2");
+
+        let legacy = config.presets.get("legacy").unwrap().clone().into_preset();
+        assert_eq!(legacy.auth_method, "basic");
+        assert_eq!(legacy.urls.get("auth").unwrap(), "https://auth.old.example.com");
+    }
+
+    #[test]
+    fn empty_config_deserializes() {
+        let json = "{}";
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert!(config.presets.is_empty());
+        assert!(config.active_env.is_empty());
+    }
 }
 
 /// Set a dotted key (e.g. "urls.auth") in the config.

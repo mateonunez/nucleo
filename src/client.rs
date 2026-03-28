@@ -101,10 +101,17 @@ pub async fn send_authenticated(
 }
 
 /// Refresh the access token using the refresh token.
+///
+/// Branches on `creds.auth_method` to use the appropriate refresh flow.
 async fn refresh_token(
     http: &reqwest::Client,
     creds: &Credentials,
 ) -> Result<Credentials, CliError> {
+    if creds.auth_method == "oauth2" {
+        return refresh_token_oauth2(http, creds).await;
+    }
+
+    // Basic auth refresh (existing flow)
     let urls = config::load_service_urls()?;
     let auth_url = config::require_url(&urls, "auth")?;
     let url = format!("{auth_url}/refresh");
@@ -130,6 +137,35 @@ async fn refresh_token(
         .map_err(|e| CliError::Auth(format!("Failed to parse refresh response: {e}")))?;
 
     Ok(new_creds)
+}
+
+/// OAuth2 token refresh flow.
+async fn refresh_token_oauth2(
+    http: &reqwest::Client,
+    creds: &Credentials,
+) -> Result<Credentials, CliError> {
+    let oauth2_config = config::load_oauth2_config()?;
+    let token_resp =
+        crate::oauth2::refresh_oauth2(http, &oauth2_config, &creds.refresh_token).await?;
+
+    let expires = token_resp.expires_in.map_or(i64::MAX, |secs| {
+        chrono::Utc::now().timestamp() + secs
+    });
+    let scopes = token_resp
+        .scope
+        .map(|s| s.split_whitespace().map(String::from).collect())
+        .unwrap_or_else(|| creds.scopes.clone());
+
+    Ok(Credentials {
+        access_token: token_resp.access_token,
+        refresh_token: token_resp
+            .refresh_token
+            .unwrap_or_else(|| creds.refresh_token.clone()),
+        expires,
+        permissions: creds.permissions.clone(),
+        auth_method: "oauth2".to_string(),
+        scopes,
+    })
 }
 
 /// Helper: parse API error response into CliError.

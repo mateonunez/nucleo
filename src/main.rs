@@ -5,6 +5,7 @@ mod consts;
 mod error;
 mod formatter;
 mod mcp;
+mod oauth2;
 mod types;
 
 use clap::{CommandFactory, Parser, Subcommand};

@@ -20,22 +20,24 @@ src/
 ├── consts.rs            APP_NAME, APP_DIR, APP_PREFIX, APP_BIN — change these to fork
 ├── error.rs             CliError enum, exit codes (1/2/3/5), JSON error output
 ├── formatter.rs         OutputFormat: Json/Table/Yaml/Csv/Ids/Slack
-├── client.rs            reqwest client, retry on 429, token auto-refresh, 401 retry
-├── config.rs            Layered config (JSON), HashMap-based ServiceUrls, env presets
+├── client.rs            reqwest client, retry on 429, token auto-refresh (basic + OAuth2), 401 retry
+├── config.rs            Layered config (JSON), PresetConfig (legacy flat / structured), env presets
+├── oauth2.rs            OAuth2 Authorization Code + PKCE: generate, callback server, token exchange
 ├── types/
 │   ├── mod.rs
-│   ├── auth.rs          Credentials, JwtPayload, decode_jwt_payload
+│   ├── auth.rs          Credentials (+ auth_method, scopes), JwtPayload, decode_jwt_payload
+│   ├── oauth2.rs        OAuth2Config (client_id, authorize_url, token_url, scopes)
 │   ├── project.rs       ProjectContext
 │   └── common.rs        PaginatedResponse<T>, PaginationParams
 ├── commands/
 │   ├── mod.rs
-│   ├── auth.rs          login, logout, token
+│   ├── auth.rs          login (basic + OAuth2), logout, token
 │   ├── config_cmd.rs    show, env (list/use), set
 │   ├── status.rs        System + auth + config status overview
 │   ├── ping.rs          Example HTTP GET command (demonstrates client pattern)
 │   ├── echo.rs          Example authenticated HTTP POST command
 │   ├── plugins.rs       Plugin lifecycle: list, install, remove, upgrade, info, execute
-│   ├── setup.rs         5-step interactive setup wizard
+│   ├── setup.rs         5-step interactive setup wizard (auto-detects OAuth2)
 │   └── mcp_cmd.rs       MCP server launcher (delegates to mcp::start)
 └── mcp/
     ├── mod.rs           NucleoServer + ServerHandler impl
@@ -53,7 +55,7 @@ config.json              Default configuration (copy to ~/.config/nucleo/config.
 .env.example             Environment variable template
 .claude/
 ├── agents/              Agent definitions (nucleo-expert)
-└── skills/              Skills (/add-command, /add-plugin, /add-mcp-tool, /benchmark, /update-docs)
+└── skills/              Skills (/add-command, /add-plugin, /add-mcp-tool, /benchmark, /create-cli, /update-docs)
 .github/workflows/
 ├── ci.yml               CI: check, test, clippy, fmt
 └── release.yml          Release: cross-platform builds + GitHub Release
@@ -63,7 +65,7 @@ config.json              Default configuration (copy to ~/.config/nucleo/config.
 
 ```
 nucleo
-├── auth          login | logout | token
+├── auth          login [--username] [--password] [--oauth2] [--no-browser] | logout | token
 ├── config        show | env (list | use <preset>) | set <key> <value>
 ├── status        [--format text|json|yaml|csv]
 ├── ping          [--service <name> | --url <url>] [--format]
@@ -115,6 +117,10 @@ All functions return `Result<_, CliError>`. Four variants with distinct exit cod
 - `send_authenticated(&http, |token| req_builder)` — wraps `send_with_retry` with credential loading, proactive token refresh (120s before expiry), and one 401-triggered refresh-and-retry
 - `handle_api_response(resp)` — returns `serde_json::Value` on 2xx; `CliError::Auth` on 401; `CliError::Api` otherwise
 
+Token refresh branches on `Credentials.auth_method`:
+- `"basic"` — POST to `{auth_url}/refresh` with query param + Bearer header (existing flow)
+- `"oauth2"` — POST to `{token_url}` with `grant_type=refresh_token` via `oauth2::refresh_oauth2()`
+
 ### Output Formatting (`formatter.rs`)
 
 Six formats: `json` (default), `table`, `yaml`, `csv`, `ids`, `slack`.
@@ -133,13 +139,18 @@ Six formats: `json` (default), `table`, `yaml`, `csv`, `ids`, `slack`.
 
 | File | Purpose |
 |------|---------|
-| `credentials.json` | `Credentials` (access_token, refresh_token, expires, permissions) |
+| `credentials.json` | `Credentials` (access_token, refresh_token, expires, permissions, auth_method, scopes) |
 | `context.json` | `ProjectContext` (project_id, env_id, api_key, stage) |
 | `config.json` | `AppConfig` (urls, active_env, presets, plugins) |
 | `plugins/` | Installed plugins directory |
 
-**ServiceUrls** — `HashMap<String, String>` (not a fixed struct). Define URLs in config.json presets:
+**ServiceUrls** — `HashMap<String, String>` (not a fixed struct).
 
+**PresetConfig** — `#[serde(untagged)]` enum supporting two formats:
+- **Legacy (flat):** `{ "auth": "https://...", "api": "https://..." }` — treated as basic auth
+- **Structured:** `{ "urls": { ... }, "auth_method": "oauth2", "oauth2": { ... } }`
+
+**Basic auth preset (legacy format):**
 ```json
 {
   "urls": {},
@@ -148,15 +159,27 @@ Six formats: `json` (default), `table`, `yaml`, `csv`, `ids`, `slack`.
     "dev": {
       "auth": "https://auth.dev.example.com/api/v2",
       "api": "https://api.dev.example.com/api/v1"
-    },
-    "prod": {
-      "auth": "https://auth.example.com/api/v2",
-      "api": "https://api.example.com/api/v1"
     }
-  },
-  "plugins": {
-    "directory": null,
-    "registries": []
+  }
+}
+```
+
+**OAuth2 preset (structured format):**
+```json
+{
+  "urls": {},
+  "active_env": "dev",
+  "presets": {
+    "dev": {
+      "urls": { "api": "https://api.spotify.com/v1" },
+      "auth_method": "oauth2",
+      "oauth2": {
+        "client_id": "your-client-id",
+        "authorize_url": "https://accounts.spotify.com/authorize",
+        "token_url": "https://accounts.spotify.com/api/token",
+        "scopes": ["user-read-playback-state", "playlist-read-private"]
+      }
+    }
   }
 }
 ```
@@ -169,19 +192,44 @@ Six formats: `json` (default), `table`, `yaml`, `csv`, `ids`, `slack`.
 - `require_url(&urls, "auth")` — returns URL or `CliError::Validation`
 - `load_service_urls()` — loads URLs with env var overrides
 - `env_preset(name)` / `env_preset_names()` — reads from config.json presets
+- `load_active_preset()` — resolves active preset as `EnvironmentPreset`
+- `load_oauth2_config()` — extracts `OAuth2Config` from active preset
 - `load_credentials()` / `save_credentials()` / `remove_credentials()`
 - `load_context()` / `save_context()`
 - `config_dir()` / `plugins_dir()`
 
 ### Types
 
-- `Credentials` — access_token, refresh_token, expires (Unix ts), permissions
+- `Credentials` — access_token, refresh_token, expires (Unix ts), permissions, auth_method ("basic"/"oauth2"), scopes
   - `decode_payload()` — decodes JWT (no signature verify)
   - `expires_soon(margin_secs)` / `is_expired()` / `is_admin()`
 - `JwtPayload` — sub, exp, email, name, username, permissions (`Option<Vec<String>>`)
+- `OAuth2Config` — client_id, authorize_url, token_url, scopes, client_secret (optional), redirect_path
 - `ProjectContext` — project_id, env_id, api_key, stage
 - `PaginatedResponse<T>` — generic paginated API response
 - `PaginationParams` — page_size/page_token with `.apply(req_builder)`
+
+### OAuth2 (`oauth2.rs`)
+
+Authorization Code flow with PKCE for public CLI clients. No `client_secret` needed.
+
+**Functions:**
+- `generate_pkce()` — random verifier + SHA-256 challenge (base64url)
+- `build_authorize_url(config, pkce, state, redirect_uri)` — full authorization URL
+- `start_callback_server(path)` — local HTTP server on random port, parses `?code=&state=`
+- `exchange_code(http, config, code, verifier, redirect_uri)` — POST to token endpoint
+- `refresh_oauth2(http, config, refresh_token)` — POST with `grant_type=refresh_token`
+- `open_browser(url)` — platform-specific (macOS/Linux/Windows)
+- `generate_state()` — random CSRF state string
+
+**OAuth2 login flow:**
+1. Load `OAuth2Config` from active preset
+2. Generate PKCE challenge + state
+3. Start callback server on `127.0.0.1:0` (random port)
+4. Open browser (or print URL with `--no-browser`)
+5. Await callback (120s timeout), validate state
+6. Exchange code for tokens
+7. Save credentials with `auth_method: "oauth2"`
 
 ### Plugin System (`commands/plugins.rs`)
 
@@ -363,12 +411,31 @@ async fn tool_my_tool(&self, Parameters(params): Parameters<MyParams>) -> String
 
 Edit `~/.config/nucleo/config.json` — add to the `presets` object:
 
+**Basic auth (legacy flat format):**
 ```json
 {
   "presets": {
     "staging": {
       "auth": "https://auth.staging.example.com/api/v2",
       "api": "https://api.staging.example.com/api/v1"
+    }
+  }
+}
+```
+
+**OAuth2 (structured format):**
+```json
+{
+  "presets": {
+    "staging": {
+      "urls": { "api": "https://api.staging.example.com/v1" },
+      "auth_method": "oauth2",
+      "oauth2": {
+        "client_id": "your-client-id",
+        "authorize_url": "https://auth.staging.example.com/authorize",
+        "token_url": "https://auth.staging.example.com/token",
+        "scopes": ["read", "write"]
+      }
     }
   }
 }

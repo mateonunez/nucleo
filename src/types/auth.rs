@@ -10,6 +10,16 @@ pub struct Credentials {
     /// Permissions list from the JWT payload.
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Auth method used to obtain these credentials: "basic" or "oauth2".
+    #[serde(default = "default_auth_method")]
+    pub auth_method: String,
+    /// OAuth2 scopes granted with this token.
+    #[serde(default)]
+    pub scopes: Vec<String>,
+}
+
+fn default_auth_method() -> String {
+    "basic".to_string()
 }
 
 /// Decoded JWT payload (generic — no domain-specific claims).
@@ -103,6 +113,8 @@ mod tests {
             refresh_token: String::new(),
             expires: 0,
             permissions: vec!["admin".to_string()],
+            auth_method: "basic".to_string(),
+            scopes: vec![],
         };
         assert!(creds.is_admin());
     }
@@ -114,8 +126,24 @@ mod tests {
             refresh_token: String::new(),
             expires: chrono::Utc::now().timestamp() + 60,
             permissions: vec![],
+            auth_method: "basic".to_string(),
+            scopes: vec![],
         };
         assert!(creds.expires_soon(120));
         assert!(!creds.expires_soon(30));
+    }
+
+    #[test]
+    fn credentials_backward_compat() {
+        // Old credentials.json without auth_method/scopes should deserialize fine
+        let json = r#"{
+            "access_token": "tok",
+            "refresh_token": "ref",
+            "expires": 9999999999,
+            "permissions": ["read"]
+        }"#;
+        let creds: Credentials = serde_json::from_str(json).unwrap();
+        assert_eq!(creds.auth_method, "basic");
+        assert!(creds.scopes.is_empty());
     }
 }
