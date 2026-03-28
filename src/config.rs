@@ -358,12 +358,7 @@ pub fn load_active_preset() -> Result<EnvironmentPreset, CliError> {
         .presets
         .get(&active)
         .map(|p| p.clone().into_preset())
-        .ok_or_else(|| {
-            CliError::Validation(format!(
-                "Preset '{}' not found in config.",
-                active
-            ))
-        })
+        .ok_or_else(|| CliError::Validation(format!("Preset '{}' not found in config.", active)))
 }
 
 /// Load OAuth2 configuration from the active preset.

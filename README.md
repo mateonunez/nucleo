@@ -24,7 +24,7 @@ cargo build --release
 - **Plugin system** — language-agnostic (Python, TypeScript, Rust, Go, anything) via subprocess protocol
 - **Scaffold plugin** — create projects, layouts, and components from templates
 - **MCP server** — Claude Desktop integration out of the box via `nucleo mcp`
-- **Layered config** (JSON) — env vars > files > defaults, with user-defined environment presets
+- **Layered config** (JSON) — env vars > top-level URLs > active preset URLs, with auto-selection of first preset
 - **OAuth2 PKCE** — Authorization Code flow with PKCE for APIs like Spotify, GitHub, Google
 - **HTTP client** — retry on 429, automatic token refresh (basic + OAuth2), 401 retry
 - **Error system** — typed errors with distinct exit codes (1/2/3/5) and JSON output
