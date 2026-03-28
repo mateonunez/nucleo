@@ -51,57 +51,24 @@ src/
 
 ## How to Fork
 
-1. Edit `src/consts.rs`:
-```rust
-pub const APP_NAME: &str = "mycli";
-pub const APP_DIR: &str = "mycli";
-pub const APP_PREFIX: &str = "MYCLI";
-pub const APP_BIN: &str = "mycli";
+**Full guide:** [docs/guides/create-a-new-cli.md](docs/guides/create-a-new-cli.md)
+
+**Quick version:**
+
+1. Edit `src/consts.rs` — change the 4 identity constants
+2. Update `Cargo.toml` — package name and `[[bin]]` name
+3. Remove example commands (`ping`, `echo`)
+4. Add your domain commands following the patterns in `src/commands/`
+5. Configure auth in `config.json` (OAuth2 PKCE, API key, or basic)
+6. `cargo build --release`
+
+**With Claude Code:**
+
+```sh
+npx skills add mateonunez/nucleo
 ```
 
-2. Update `Cargo.toml`:
-```toml
-[package]
-name = "mycli"
-
-[[bin]]
-name = "mycli"
-```
-
-3. Copy `config.json` to `~/.config/mycli/config.json` and define your service URLs:
-```json
-{
-  "urls": {},
-  "active_env": "dev",
-  "presets": {
-    "dev": {
-      "auth": "https://auth.dev.example.com/api/v2",
-      "api": "https://api.dev.example.com/api/v1"
-    }
-  }
-}
-```
-
-For OAuth2 APIs (Spotify, GitHub, etc.), use the structured preset format:
-```json
-{
-  "presets": {
-    "dev": {
-      "urls": { "api": "https://api.spotify.com/v1" },
-      "auth_method": "oauth2",
-      "oauth2": {
-        "client_id": "your-client-id",
-        "authorize_url": "https://accounts.spotify.com/authorize",
-        "token_url": "https://accounts.spotify.com/api/token",
-        "scopes": ["user-read-playback-state"]
-      }
-    }
-  }
-}
-```
-
-4. Replace example commands (`ping`, `echo`) with your domain commands
-5. `cargo build --release`
+Then run `/create-cli` — it discovers your API endpoints, configures auth, and generates everything automatically.
 
 ## Commands
 
