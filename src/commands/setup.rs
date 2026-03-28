@@ -60,17 +60,35 @@ pub async fn handle(args: &SetupArgs) -> Result<(), CliError> {
 
     // ── Step 2/5: Authentication ─────────────────────────────────────────
     println!("Step 2/5: Authentication");
-    let urls = config::load_service_urls().unwrap_or_default();
-    if urls.contains_key("auth") {
-        let (username, password) = resolve_credentials(args)?;
+    let auth_method = config::load_active_preset()
+        .map(|p| p.auth_method.clone())
+        .unwrap_or_else(|_| "basic".to_string());
+
+    if auth_method == "oauth2" {
+        // OAuth2 flow — no username/password needed
+        println!("  Using OAuth2 authentication...");
         super::auth::handle(&crate::commands::auth::AuthCommand::Login {
-            username,
-            password: Some(password),
+            username: None,
+            password: None,
+            oauth2: true,
+            no_browser: false,
         })
         .await?;
     } else {
-        println!("  No 'auth' URL configured. Skipping authentication.");
-        println!("  Set it with: {app} config set urls.auth <url>");
+        let urls = config::load_service_urls().unwrap_or_default();
+        if urls.contains_key("auth") {
+            let (username, password) = resolve_credentials(args)?;
+            super::auth::handle(&crate::commands::auth::AuthCommand::Login {
+                username: Some(username),
+                password: Some(password),
+                oauth2: false,
+                no_browser: false,
+            })
+            .await?;
+        } else {
+            println!("  No 'auth' URL configured. Skipping authentication.");
+            println!("  Set it with: {app} config set urls.auth <url>");
+        }
     }
     println!();
 

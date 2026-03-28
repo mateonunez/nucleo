@@ -19,13 +19,14 @@ cargo build --release
 
 ## Features
 
-- **8 native commands** — auth, config, status, ping, echo, completions, plugins, mcp, setup
+- **9 native commands** — auth, config, status, ping, echo, completions, plugins, mcp, setup
 - **6 output formats** — JSON, table, YAML, CSV, IDs, Slack mrkdwn
 - **Plugin system** — language-agnostic (Python, TypeScript, Rust, Go, anything) via subprocess protocol
 - **Scaffold plugin** — create projects, layouts, and components from templates
 - **MCP server** — Claude Desktop integration out of the box via `nucleo mcp`
 - **Layered config** (JSON) — env vars > files > defaults, with user-defined environment presets
-- **HTTP client** — retry on 429, automatic token refresh, 401 retry
+- **OAuth2 PKCE** — Authorization Code flow with PKCE for APIs like Spotify, GitHub, Google
+- **HTTP client** — retry on 429, automatic token refresh (basic + OAuth2), 401 retry
 - **Error system** — typed errors with distinct exit codes (1/2/3/5) and JSON output
 - **Benchmarks** — token consumption and execution speed measurement
 - **CI/CD** — GitHub Actions for quality (check, test, clippy, fmt) and cross-platform release
@@ -42,7 +43,8 @@ src/
 ├── formatter.rs     # 6 output formats
 ├── client.rs        # HTTP client with retry + auth
 ├── config.rs        # Layered config (JSON) with HashMap-based service URLs
-├── types/           # Auth, project context, pagination
+├── oauth2.rs        # OAuth2 Authorization Code + PKCE
+├── types/           # Auth, OAuth2 config, project context, pagination
 ├── commands/        # All CLI commands
 └── mcp/             # MCP server for AI assistant integration
 ```
@@ -75,10 +77,24 @@ name = "mycli"
     "dev": {
       "auth": "https://auth.dev.example.com/api/v2",
       "api": "https://api.dev.example.com/api/v1"
-    },
-    "prod": {
-      "auth": "https://auth.example.com/api/v2",
-      "api": "https://api.example.com/api/v1"
+    }
+  }
+}
+```
+
+For OAuth2 APIs (Spotify, GitHub, etc.), use the structured preset format:
+```json
+{
+  "presets": {
+    "dev": {
+      "urls": { "api": "https://api.spotify.com/v1" },
+      "auth_method": "oauth2",
+      "oauth2": {
+        "client_id": "your-client-id",
+        "authorize_url": "https://accounts.spotify.com/authorize",
+        "token_url": "https://accounts.spotify.com/api/token",
+        "scopes": ["user-read-playback-state"]
+      }
     }
   }
 }
@@ -91,7 +107,7 @@ name = "mycli"
 
 | Command | Description |
 |---------|-------------|
-| `auth login\|logout\|token` | Manage authentication |
+| `auth login\|logout\|token` | Manage authentication (basic or OAuth2 PKCE) |
 | `config show\|env\|set` | View and modify configuration |
 | `status` | System, auth, and config overview |
 | `ping` | HTTP GET example (test connectivity) |
@@ -157,6 +173,7 @@ Connect nucleo to Claude Desktop:
 - **reqwest** 0.12 (HTTP client)
 - **rmcp** 1.3 (MCP server)
 - **serde** / **serde_json** (serialization)
+- **sha2** 0.10 / **rand** 0.9 (OAuth2 PKCE)
 - **thiserror** 2 / **anyhow** (error handling)
 
 ## License
