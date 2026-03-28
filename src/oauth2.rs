@@ -90,15 +90,26 @@ fn urlencoded(s: &str) -> String {
 /// Parsed callback result: (authorization_code, state).
 pub type CallbackResult = (String, String);
 
-/// Start a local HTTP server on a random port and wait for the OAuth2 callback.
+/// Fixed port for the OAuth2 callback server.
 ///
+/// Register `http://127.0.0.1:8888/callback` as the redirect URI in your provider dashboard.
+/// If port 8888 is busy, falls back to an OS-assigned port — the redirect URI will then differ
+/// from what is registered and the OAuth2 flow will fail.
+const DEFAULT_CALLBACK_PORT: u16 = 8888;
+
+/// Start a local HTTP server for the OAuth2 callback.
+///
+/// Tries port 8888 first; falls back to an OS-assigned port if 8888 is busy.
 /// Returns the port and a receiver that yields `(code, state)` when the callback arrives.
 pub async fn start_callback_server(
     redirect_path: &str,
 ) -> Result<(u16, oneshot::Receiver<CallbackResult>), CliError> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to bind callback server: {e}")))?;
+    let listener = match TcpListener::bind(format!("127.0.0.1:{DEFAULT_CALLBACK_PORT}")).await {
+        Ok(l) => l,
+        Err(_) => TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to bind callback server: {e}")))?,
+    };
 
     let port = listener
         .local_addr()

@@ -251,7 +251,7 @@ If confidence is low on any aspect, flag it explicitly and ask the user to confi
 
 ## Phase 3: Auth Configuration
 
-Based on the detected auth type, **pre-fill everything** and ask only the minimum:
+Based on the detected auth type, **pre-fill everything you can** and collect credentials interactively.
 
 ### OAuth2 (PKCE)
 
@@ -261,23 +261,35 @@ Pre-fill from profile or spec:
 - `redirect_path` → `/callback` (default)
 - `scopes` → from profile or spec security scheme
 
-Ask only:
+Show registration instructions **before** asking for credentials:
+
 ```
-OAuth2 client_id (you'll need to register an app at {provider-dashboard-url}):
+OAuth2 setup for {Provider}
+
+  1. Go to {provider-dashboard-url}
+  2. Create a new application
+  3. Set redirect URI to: http://127.0.0.1:8888/callback
+     (nucleo uses port 8888 for the local callback server — register this exact URI)
+  4. Copy your client_id and client_secret below
+```
+
+Then ask — **both fields are required to proceed**:
+
+```
+Client ID (required):
+> _
+
+Client Secret (optional — leave blank for public PKCE clients):
 > _
 ```
 
-Show registration instructions:
+**IMPORTANT:** Do NOT leave `client_id` empty in the generated config. If the user skips it, stop and explain:
 ```
-To get a client_id:
-  1. Go to {provider-dashboard-url}
-  2. Create a new application
-  3. Set redirect URI to: http://127.0.0.1:7878/callback
-     (nucleo uses a local callback server — some providers accept http://localhost)
-  4. Copy the client_id here
+⚠ client_id is required for OAuth2 login to work.
+  Add it now, or fill it in manually before running `{cli-name} auth login`.
 ```
 
-Generate `config.json`:
+Generate `config.json` with the collected values:
 ```json
 {
   "urls": {},
@@ -290,6 +302,7 @@ Generate `config.json`:
       "auth_method": "oauth2",
       "oauth2": {
         "client_id": "{client_id}",
+        "client_secret": "{client_secret_or_omit_field}",
         "authorize_url": "{authorize_url}",
         "token_url": "{token_url}",
         "redirect_path": "/callback",
@@ -300,6 +313,8 @@ Generate `config.json`:
   "plugins": { "directory": null, "registries": [] }
 }
 ```
+
+If `client_secret` was left blank, **omit the field entirely** from the generated JSON (do not write `"client_secret": ""`).
 
 ### Bearer / API Key
 
@@ -493,10 +508,34 @@ Run `cargo check`.
 
 ### 5.5 — Generate config.json
 
-Write `config.json` at the project root using the structure from Phase 3. After writing, print:
+Write `config.json` at the project root using the structure from Phase 3.
+
+After writing, determine the user's config directory and print the correct install command:
+
+```bash
+# Detect OS for the correct config path
+uname_out=$(uname -s 2>/dev/null || echo "Linux")
+if [ "$uname_out" = "Darwin" ]; then
+  config_dir="$HOME/.config/{cli-name}"
+else
+  config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/{cli-name}"
+fi
+echo "Config directory: $config_dir"
 ```
-Config written to config.json — copy it to ~/.config/{cli-name}/config.json after install.
+
+Then print:
 ```
+Config written to config.json.
+
+To install:
+  mkdir -p {config_dir}
+  cp config.json {config_dir}/config.json
+```
+
+**Config directory facts (important — the CLI always uses `~/.config`, NOT `~/Library/Application Support`):**
+- macOS: `~/.config/{cli-name}/config.json`
+- Linux: `~/.config/{cli-name}/config.json` (or `$XDG_CONFIG_HOME/{cli-name}/config.json`)
+- Override anytime: set `{PREFIX}_CONFIG_DIR=/path/to/dir`
 
 ### 5.6 — Generate .env.example
 
@@ -510,6 +549,9 @@ Write `.env.example` at the project root:
 
 # Override service URLs
 {PREFIX}_API_URL=
+
+# Override config directory (default: ~/.config/{cli-name})
+{PREFIX}_CONFIG_DIR=
 
 # Active environment preset
 {PREFIX}_ENV=production
@@ -588,7 +630,7 @@ Replace the existing README with:
 3. Setup section (`{cli-name} setup`)
 4. Auth section (OAuth2 registration steps if applicable, or API key setup)
 5. Command tree (generated from the actual commands created)
-6. Configuration section (config.json structure, env vars)
+6. Configuration section (config.json structure, env vars) — include the correct config path (`~/.config/{cli-name}/`)
 7. MCP integration section
 
 ---
@@ -626,10 +668,12 @@ Print this numbered checklist after a successful build:
 Next steps:
 
   1. {if OAuth2} Register an OAuth2 app at {provider-dashboard-url}
-               Set redirect URI: http://127.0.0.1:7979/callback
-               Copy your client_id into config.json → presets.production.oauth2.client_id
+               Set redirect URI: http://127.0.0.1:8888/callback
+               ↑ This exact URI — nucleo uses port 8888 for the local callback server.
+               Copy your client_id (and client_secret if required) into:
+               ~/.config/{cli-name}/config.json → presets.production.oauth2.client_id
 
-  2. Copy config.json to your config directory:
+  2. Copy config to your config directory:
        mkdir -p ~/.config/{cli-name}
        cp config.json ~/.config/{cli-name}/config.json
 
@@ -644,6 +688,14 @@ Next steps:
 
   6. Run your first command:
        {cli-name} {first-generated-command} --format table
+
+Troubleshooting:
+  "No presets defined"       → config.json is not in ~/.config/{cli-name}/ (see step 2)
+  "client_id is empty"       → add your OAuth2 client_id to config.json (see step 1)
+  "client_secret is empty"   → either remove the field or add the real secret from your dashboard
+  "Invalid redirect URI"     → register http://127.0.0.1:8888/callback in your provider dashboard
+  Config dir location        → run `{cli-name} config show` to see the exact path being used
+  Override config dir        → set {PREFIX}_CONFIG_DIR=/path/to/dir
 ```
 
 ---
@@ -955,6 +1007,17 @@ These rules apply to ALL generated code and config. Never violate them.
 - OAuth2 APIs: use `client::send_authenticated(&http, |token| req.bearer_auth(token))`
 - API key / Bearer token APIs: use `client::send_with_retry(|| req.bearer_auth(&token))` where `token` is read from env `{PREFIX}_TOKEN` or from `config::load_credentials()`
 - Never hardcode tokens or secrets
+- **Never generate a config with `"client_id": ""`** — always either fill it with the real value or use a visible placeholder like `"YOUR_CLIENT_ID_HERE"` with a comment in the next steps
+
+**Config directory:**
+- The CLI always resolves config to `~/.config/{cli-name}/` (NOT `~/Library/Application Support` on macOS)
+- Always use this path in docs, README, and next steps output
+- Users can override with `{PREFIX}_CONFIG_DIR` env var or `XDG_CONFIG_HOME`
+
+**OAuth2 redirect URI:**
+- The callback server binds to port **8888** by default (fixed, not random)
+- Always tell users to register exactly: `http://127.0.0.1:8888/callback`
+- If port 8888 is busy, the server falls back to a random port — warn the user if this happens
 
 **Build hygiene:**
 - Run `cargo check` after 5.1, 5.2, 5.4, and 5.7
