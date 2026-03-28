@@ -16,17 +16,57 @@ pub type ServiceUrls = HashMap<String, String>;
 // Directory helpers
 // ---------------------------------------------------------------------------
 
+/// Resolve the configuration directory.
+///
+/// Priority (highest to lowest):
+/// 1. `{APP_PREFIX}_CONFIG_DIR` env var — explicit override
+/// 2. `XDG_CONFIG_HOME/{APP_DIR}` — respects XDG on all platforms
+/// 3. `~/.config/{APP_DIR}` — consistent default across macOS and Linux
+///
+/// **Why not `dirs::config_dir()`?**
+/// On macOS, `dirs::config_dir()` returns `~/Library/Application Support`, which is
+/// unexpected for developer CLI tools. Using `~/.config` consistently avoids surprises
+/// when users try to edit or copy their config.
 pub fn config_dir() -> Result<PathBuf, CliError> {
-    let dir = dirs::config_dir()
-        .ok_or_else(|| CliError::Other(anyhow::anyhow!("Could not determine config directory")))?
-        .join(APP_DIR);
+    // 1. Explicit env var override: {APP_PREFIX}_CONFIG_DIR
+    let env_var = format!("{APP_PREFIX}_CONFIG_DIR");
+    if let Ok(val) = std::env::var(&env_var) {
+        if !val.is_empty() {
+            let dir = PathBuf::from(val);
+            if !dir.exists() {
+                std::fs::create_dir_all(&dir).map_err(|e| {
+                    CliError::Other(anyhow::anyhow!("Failed to create config dir: {e}"))
+                })?;
+            }
+            return Ok(dir);
+        }
+    }
 
+    // 2. XDG_CONFIG_HOME (user-defined base) or 3. ~/.config (consistent default)
+    let base = if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            PathBuf::from(xdg)
+        } else {
+            default_config_base()?
+        }
+    } else {
+        default_config_base()?
+    };
+
+    let dir = base.join(APP_DIR);
     if !dir.exists() {
         std::fs::create_dir_all(&dir)
             .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to create config dir: {e}")))?;
     }
 
     Ok(dir)
+}
+
+/// Returns `~/.config` — the consistent base used on macOS and Linux.
+fn default_config_base() -> Result<PathBuf, CliError> {
+    dirs::home_dir()
+        .ok_or_else(|| CliError::Other(anyhow::anyhow!("Could not determine home directory")))
+        .map(|h| h.join(".config"))
 }
 
 fn credentials_path() -> Result<PathBuf, CliError> {
@@ -279,15 +319,14 @@ impl Default for AppConfig {
 // ---------------------------------------------------------------------------
 
 /// Available preset names (read from config.json).
-pub fn env_preset_names() -> Vec<String> {
-    match load_config() {
-        Ok(cfg) => {
-            let mut names: Vec<String> = cfg.presets.keys().cloned().collect();
-            names.sort();
-            names
-        }
-        Err(_) => Vec::new(),
-    }
+///
+/// Returns an error if the config file exists but cannot be parsed, so callers
+/// can surface the real problem instead of silently showing an empty list.
+pub fn env_preset_names() -> Result<Vec<String>, CliError> {
+    let cfg = load_config()?;
+    let mut names: Vec<String> = cfg.presets.keys().cloned().collect();
+    names.sort();
+    Ok(names)
 }
 
 /// Return service URLs for a named preset, or `None` if not found.

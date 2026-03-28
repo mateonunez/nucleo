@@ -156,6 +156,28 @@ const OAUTH2_CALLBACK_TIMEOUT_SECS: u64 = 120;
 async fn login_oauth2(no_browser: bool) -> Result<(), CliError> {
     let oauth2_config = config::load_oauth2_config()?;
 
+    // Validate required fields before touching the network
+    if oauth2_config.client_id.is_empty() {
+        return Err(CliError::Validation(
+            "OAuth2 client_id is empty. Open your provider's developer dashboard, \
+             copy the client ID, and add it to config.json under \
+             presets.<env>.oauth2.client_id."
+                .to_string(),
+        ));
+    }
+    if oauth2_config
+        .client_secret
+        .as_deref()
+        .map(str::is_empty)
+        .unwrap_or(false)
+    {
+        return Err(CliError::Validation(
+            "OAuth2 client_secret is set but empty. Either remove the field entirely \
+             (for PKCE public clients) or add the real secret from your provider dashboard."
+                .to_string(),
+        ));
+    }
+
     // 1. Generate PKCE challenge and state
     let pkce = oauth2::generate_pkce();
     let state = oauth2::generate_state();

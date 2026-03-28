@@ -46,7 +46,7 @@ pub async fn handle(args: &SetupArgs) -> Result<(), CliError> {
 
     // ── Step 1/5: Environment ────────────────────────────────────────────
     println!("Step 1/5: Environment");
-    let presets = config::env_preset_names();
+    let presets = config::env_preset_names().unwrap_or_default();
     if presets.is_empty() {
         println!("  No presets defined in config.json. Skipping.");
     } else {

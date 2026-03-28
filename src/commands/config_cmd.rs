@@ -61,7 +61,7 @@ fn handle_env(cmd: &EnvConfigCommand) -> Result<(), CliError> {
 fn list_presets() -> Result<(), CliError> {
     let cfg = config::load_config()?;
     let active = &cfg.active_env;
-    let names = config::env_preset_names();
+    let names = config::env_preset_names()?;
 
     if names.is_empty() {
         println!("No presets defined. Add them to config.json under presets.<name>.");
@@ -79,8 +79,8 @@ fn list_presets() -> Result<(), CliError> {
 }
 
 fn use_preset(preset: &str) -> Result<(), CliError> {
+    let available = config::env_preset_names()?.join(", ");
     let urls = config::env_preset(preset).ok_or_else(|| {
-        let available = config::env_preset_names().join(", ");
         let hint = if available.is_empty() {
             "No presets defined. Add them to config.json under presets.<name>.".to_string()
         } else {
