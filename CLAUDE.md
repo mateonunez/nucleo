@@ -194,9 +194,9 @@ Six formats: `json` (default), `table`, `yaml`, `csv`, `ids`, `slack`.
 
 **Key functions:**
 - `require_url(&urls, "auth")` — returns URL or `CliError::Validation`
-- `load_service_urls()` — loads URLs with env var overrides
+- `load_service_urls()` — merges URLs from active preset, top-level config, and env var overrides (preset < top-level < env vars)
 - `env_preset(name)` / `env_preset_names()` — reads from config.json presets
-- `load_active_preset()` — resolves active preset as `EnvironmentPreset`
+- `load_active_preset()` — resolves active preset as `EnvironmentPreset` (falls back to first preset if `active_env` is empty)
 - `load_oauth2_config()` — extracts `OAuth2Config` from active preset
 - `load_credentials()` / `save_credentials()` / `remove_credentials()`
 - `load_context()` / `save_context()`
