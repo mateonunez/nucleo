@@ -385,6 +385,61 @@ pub fn save_config(config: &AppConfig) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Set a dotted key (e.g. "urls.auth") in the config.
+pub fn set_config_value(key: &str, value: &str) -> Result<(), CliError> {
+    let path = config_json_path()?;
+    let content = if path.exists() {
+        std::fs::read_to_string(&path)
+            .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to read config.json: {e}")))?
+    } else {
+        String::new()
+    };
+
+    let mut doc: serde_json::Value = if content.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&content)
+            .map_err(|e| CliError::Other(anyhow::anyhow!("Invalid config.json: {e}")))?
+    };
+
+    // Navigate dotted path
+    let parts: Vec<&str> = key.split('.').collect();
+    if parts.is_empty() {
+        return Err(CliError::Validation("Empty config key".to_string()));
+    }
+
+    let mut current = &mut doc;
+    for part in &parts[..parts.len() - 1] {
+        if !current.is_object() {
+            return Err(CliError::Validation(format!(
+                "Key '{part}' is not an object"
+            )));
+        }
+        let obj = current.as_object_mut().unwrap();
+        if !obj.contains_key(*part) {
+            obj.insert(part.to_string(), serde_json::json!({}));
+        }
+        current = obj.get_mut(*part).unwrap();
+    }
+
+    let last_key = parts[parts.len() - 1];
+    if let Some(obj) = current.as_object_mut() {
+        obj.insert(
+            last_key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+    } else {
+        return Err(CliError::Validation(format!("Cannot set key '{key}'")));
+    }
+
+    let output = serde_json::to_string_pretty(&doc)
+        .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to serialize config: {e}")))?;
+    std::fs::write(&path, output)
+        .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to save config.json: {e}")))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,59 +532,4 @@ mod tests {
         assert!(config.presets.is_empty());
         assert!(config.active_env.is_empty());
     }
-}
-
-/// Set a dotted key (e.g. "urls.auth") in the config.
-pub fn set_config_value(key: &str, value: &str) -> Result<(), CliError> {
-    let path = config_json_path()?;
-    let content = if path.exists() {
-        std::fs::read_to_string(&path)
-            .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to read config.json: {e}")))?
-    } else {
-        String::new()
-    };
-
-    let mut doc: serde_json::Value = if content.is_empty() {
-        serde_json::json!({})
-    } else {
-        serde_json::from_str(&content)
-            .map_err(|e| CliError::Other(anyhow::anyhow!("Invalid config.json: {e}")))?
-    };
-
-    // Navigate dotted path
-    let parts: Vec<&str> = key.split('.').collect();
-    if parts.is_empty() {
-        return Err(CliError::Validation("Empty config key".to_string()));
-    }
-
-    let mut current = &mut doc;
-    for part in &parts[..parts.len() - 1] {
-        if !current.is_object() {
-            return Err(CliError::Validation(format!(
-                "Key '{part}' is not an object"
-            )));
-        }
-        let obj = current.as_object_mut().unwrap();
-        if !obj.contains_key(*part) {
-            obj.insert(part.to_string(), serde_json::json!({}));
-        }
-        current = obj.get_mut(*part).unwrap();
-    }
-
-    let last_key = parts[parts.len() - 1];
-    if let Some(obj) = current.as_object_mut() {
-        obj.insert(
-            last_key.to_string(),
-            serde_json::Value::String(value.to_string()),
-        );
-    } else {
-        return Err(CliError::Validation(format!("Cannot set key '{key}'")));
-    }
-
-    let output = serde_json::to_string_pretty(&doc)
-        .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to serialize config: {e}")))?;
-    std::fs::write(&path, output)
-        .map_err(|e| CliError::Other(anyhow::anyhow!("Failed to save config.json: {e}")))?;
-
-    Ok(())
 }
