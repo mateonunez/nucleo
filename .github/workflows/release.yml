@@ -154,15 +154,15 @@ jobs:
         run: |
           PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1 || echo "")
           if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges)
+            CHANGELOG=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" --no-merges --invert-grep --grep="^chore: release")
           else
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges -20)
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges --invert-grep --grep="^chore: release" -20)
           fi
           echo "$CHANGELOG" > /tmp/changelog.txt
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.NUCLEO_RELEASE_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
           TAG="${{ needs.bump.outputs.tag }}"
