@@ -220,7 +220,7 @@ Authorization Code flow with PKCE for public CLI clients. No `client_secret` nee
 **Functions:**
 - `generate_pkce()` — random verifier + SHA-256 challenge (base64url)
 - `build_authorize_url(config, pkce, state, redirect_uri)` — full authorization URL
-- `start_callback_server(path)` — local HTTP server on random port, parses `?code=&state=`
+- `start_callback_server(path)` — local HTTP server on port 8888 (falls back to random if busy), parses `?code=&state=`
 - `exchange_code(http, config, code, verifier, redirect_uri)` — POST to token endpoint
 - `refresh_oauth2(http, config, refresh_token)` — POST with `grant_type=refresh_token`
 - `open_browser(url)` — platform-specific (macOS/Linux/Windows)

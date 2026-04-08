@@ -159,7 +159,7 @@ Ask your API provider which auth method they use, then follow the matching secti
 This is the most common auth method for APIs that act on behalf of a user.
 
 1. **Register your app** with the API provider (see the registration URL in the table above)
-2. Set the **redirect URI** to `http://127.0.0.1:7878/callback`
+2. Set the **redirect URI** to `http://127.0.0.1:8888/callback`
 3. Copy your **client_id**
 
 4. Create your **`config.json`**:
@@ -818,7 +818,7 @@ It supports OpenAPI/Swagger specs, live documentation URLs (ReadMe, Redoc, Swagg
 | `cargo check` fails after removing ping/echo | Make sure you removed all references from `mod.rs` and `main.rs` (both the enum variant and the match arm) |
 | "Not authenticated" error | Run `spotify-cli auth login` or set `SPOTIFY_CLI_TOKEN` |
 | "No 'api' URL configured" | Check `~/.config/spotify-cli/config.json` has the `api` URL |
-| OAuth2 login opens browser but nothing happens | Verify your redirect URI is set to `http://127.0.0.1:7878/callback` in your OAuth2 app settings |
+| OAuth2 login opens browser but nothing happens | Verify your redirect URI is set to `http://127.0.0.1:8888/callback` in your OAuth2 app settings |
 | Commands return 401 | Your token may have expired. Run `spotify-cli auth login` again |
 | `cargo clippy` warnings | Fix all warnings before shipping — nucleo's CI runs clippy with `-D warnings` |
 
