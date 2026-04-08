@@ -110,7 +110,7 @@ nucleo plugins scaffold create my-app hello-api         # scaffold a project
 
 ## MCP Server
 
-Connect nucleo to Claude Desktop:
+Connect nucleo to Claude Desktop. Add this to your config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
 ```json
 {
@@ -122,6 +122,20 @@ Connect nucleo to Claude Desktop:
   }
 }
 ```
+
+Or automate it:
+
+```sh
+nucleo setup --claude-desktop
+```
+
+**Available tools:**
+
+| Tool | Description |
+|------|-------------|
+| `nucleo_status` | Check CLI status: version, auth, project context, configured URLs |
+| `nucleo_ping` | Ping a service URL to check connectivity and measure latency |
+| `nucleo_plugins_list` | List installed plugins with their versions and commands |
 
 ## Benchmarks
 
